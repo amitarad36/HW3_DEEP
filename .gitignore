@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environments & env files
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ML/Training artifacts
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.log
+
+# Test caches
+cs236781/tests/__pycache__/
