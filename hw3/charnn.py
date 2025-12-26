@@ -126,7 +126,24 @@ def chars_to_labelled_samples(text: str, char_to_idx: dict, seq_len: int, device
     #  3. Create the labels tensor in a similar way and convert to indices.
     #  Note that no explicit loops are required to implement this function.
     # ====== YOUR CODE: ======
-    pass
+    # Embed the entire text
+    embedded = chars_to_onehot(text, char_to_idx)
+    
+    # Calculate number of samples (last char has no label, so we can use len(text)-1)
+    N = (len(text) - 1) // seq_len
+    V = len(char_to_idx)
+    
+    # Extract samples (use first N*seq_len chars)
+    samples = embedded[:N * seq_len].reshape(N, seq_len, V)
+    
+    # Extract labels (offset by 1 to get next char, convert to indices)
+    label_chars = text[1:N * seq_len + 1]
+    labels = torch.tensor([char_to_idx[ch] for ch in label_chars], dtype=torch.long)
+    labels = labels.reshape(N, seq_len)
+    
+    # Move to device
+    samples = samples.to(device)
+    labels = labels.to(device)
     # ========================
     return samples, labels
 
@@ -142,8 +159,9 @@ def hot_softmax(y, dim=0, temperature=1.0):
     """
     # TODO: Implement based on the above.
     # ====== YOUR CODE: ======
-    pass
+    result = torch.softmax(y / temperature, dim=dim)
     # ========================
+    return result
 
 
 def generate_from_model(model, start_sequence, n_chars, char_maps, T):
@@ -177,7 +195,29 @@ def generate_from_model(model, start_sequence, n_chars, char_maps, T):
     #  necessary for this. Best to disable tracking for speed.
     #  See torch.no_grad().
     # ====== YOUR CODE: ======
-    pass
+    with torch.no_grad():
+        # Embed the start sequence
+        embedded_seq = chars_to_onehot(start_sequence, char_to_idx).unsqueeze(0).float().to(device)
+        
+        # Feed start sequence through model
+        y, hidden_state = model(embedded_seq)
+        
+        # Generate remaining chars
+        for _ in range(n_chars - len(start_sequence)):
+            # Get output scores for last char
+            scores = y[0, -1, :]
+            
+            # Convert to probabilities using hot_softmax
+            probs = hot_softmax(scores, dim=0, temperature=T)
+            
+            # Sample next char index
+            next_idx = torch.multinomial(probs, num_samples=1).item()
+            next_char = idx_to_char[next_idx]
+            out_text += next_char
+            
+            # Embed next char and feed to model
+            next_embedded = chars_to_onehot(next_char, char_to_idx).unsqueeze(0).float().to(device)
+            y, hidden_state = model(next_embedded, hidden_state)
     # ========================
 
     return out_text
@@ -210,7 +250,17 @@ class SequenceBatchSampler(torch.utils.data.Sampler):
         #  you can drop it.
         idx = None  # idx should be a 1-d list of indices.
         # ====== YOUR CODE: ======
-        pass
+        n = len(self.dataset)
+        num_batches = n // self.batch_size
+        
+        # Create indices that when reshaped to (num_batches, batch_size),
+        # each column contains consecutive indices from the dataset
+        idx = []
+        for batch_idx in range(num_batches):
+            for sample_idx in range(self.batch_size):
+                # Each column in the batch should be consecutive samples
+                dataset_idx = sample_idx * num_batches + batch_idx
+                idx.append(dataset_idx)
         # ========================
         return iter(idx)
 
@@ -242,7 +292,44 @@ class MultilayerGRU(nn.Module):
         self.layer_params = []
 
         # ====== YOUR CODE: ======
-        pass
+        # Create GRU layers
+        for i in range(n_layers):
+            # Determine input dimension for this layer
+            layer_in_dim = in_dim if i == 0 else h_dim
+            
+            # Update gate
+            update_wx = nn.Linear(layer_in_dim, h_dim, bias=False)
+            update_wh = nn.Linear(h_dim, h_dim, bias=True)
+            
+            # Reset gate
+            reset_wx = nn.Linear(layer_in_dim, h_dim, bias=False)
+            reset_wh = nn.Linear(h_dim, h_dim, bias=True)
+            
+            # Candidate state
+            candidate_wx = nn.Linear(layer_in_dim, h_dim, bias=False)
+            candidate_wh = nn.Linear(h_dim, h_dim, bias=True)
+            
+            # Dropout (only applied between layers)
+            dropout_layer = nn.Dropout(dropout)
+            
+            # Store layer parameters as tuple
+            self.layer_params.append((
+                update_wx, update_wh,
+                reset_wx, reset_wh,
+                candidate_wx, candidate_wh,
+                dropout_layer
+            ))
+        
+        # Output layer
+        output_layer = nn.Linear(h_dim, out_dim, bias=True)
+        self.layer_params.append((output_layer,))
+        
+        # Register all parameters with the module
+        for i, layer_tuple in enumerate(self.layer_params[:-1]):
+            for j, param_module in enumerate(layer_tuple):
+                if isinstance(param_module, nn.Module):
+                    self.add_module(f'layer{i}_param{j}', param_module)
+        self.add_module('output_layer', self.layer_params[-1][0])
         # ========================
 
     def forward(self, input: Tensor, hidden_state: Tensor = None):
