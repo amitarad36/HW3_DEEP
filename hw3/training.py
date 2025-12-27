@@ -94,7 +94,24 @@ class Trainer(abc.ABC):
             #  - Implement early stopping. This is a very useful and
             #    simple regularization technique that is highly recommended.
             # ====== YOUR CODE: ======
-            pass
+            train_result = self.train_epoch(dl_train, verbose=verbose, **kw)
+            test_result = self.test_epoch(dl_test, verbose=verbose, **kw)
+            
+            train_loss.append(sum(train_result.losses) / len(train_result.losses))
+            train_acc.append(train_result.accuracy)
+            test_loss.append(sum(test_result.losses) / len(test_result.losses))
+            test_acc.append(test_result.accuracy)
+            
+            actual_num_epochs += 1
+            
+            if best_acc is None or test_result.accuracy > best_acc:
+                best_acc = test_result.accuracy
+                epochs_without_improvement = 0
+                save_checkpoint = True
+            else:
+                epochs_without_improvement += 1
+                if early_stopping is not None and epochs_without_improvement >= early_stopping:
+                    break
             # ========================
 
             # Save model checkpoint if requested
@@ -222,14 +239,14 @@ class RNNTrainer(Trainer):
     def train_epoch(self, dl_train: DataLoader, **kw):
         # TODO: Implement modifications to the base method, if needed.
         # ====== YOUR CODE: ======
-        pass
+        self.hidden_state = None
         # ========================
         return super().train_epoch(dl_train, **kw)
 
     def test_epoch(self, dl_test: DataLoader, **kw):
         # TODO: Implement modifications to the base method, if needed.
         # ====== YOUR CODE: ======
-        pass
+        self.hidden_state = None
         # ========================
         return super().test_epoch(dl_test, **kw)
 
@@ -247,7 +264,24 @@ class RNNTrainer(Trainer):
         #  - Update params
         #  - Calculate number of correct char predictions
         # ====== YOUR CODE: ======
-        pass
+        self.optimizer.zero_grad()
+
+        # 1. Forward pass using the maintained hidden state
+        #    Note: self.hidden_state is None for the very first batch of the epoch
+        output, new_hidden_state = self.model(x, self.hidden_state)
+        
+        # 2. Update the state and DETACH it to truncate BPTT
+        #    This prevents backprop from trying to go back to the start of the epoch
+        self.hidden_state = new_hidden_state.detach()
+
+        # 3. Calculate loss
+        loss = self.loss_fn(output.view(-1, output.size(-1)), y.view(-1))
+        loss.backward()
+        self.optimizer.step()
+
+        # 4. Calculate accuracy
+        _, predicted = torch.max(output, dim=2)
+        num_correct = (predicted == y).sum()
         # ========================
 
         # Note: scaling num_correct by seq_len because each sample has seq_len
@@ -267,7 +301,12 @@ class RNNTrainer(Trainer):
             #  - Loss calculation
             #  - Calculate number of correct predictions
             # ====== YOUR CODE: ======
-            pass
+            # Pass the state, but no need to detach inside torch.no_grad()
+            output, self.hidden_state = self.model(x, self.hidden_state)
+            
+            loss = self.loss_fn(output.view(-1, output.size(-1)), y.view(-1))
+            _, predicted = torch.max(output, dim=2)
+            num_correct = (predicted == y).sum()
             # ========================
 
         return BatchResult(loss.item(), num_correct.item() / seq_len)
