@@ -19,7 +19,49 @@ class EncoderCNN(nn.Module):
         #  use pooling or only strides, use any activation functions,
         #  use BN or Dropout, etc.
         # ====== YOUR CODE: ======
-        pass
+        channels = [128, 256, 512]
+        cur_in = in_channels
+
+        for i in range(len(channels)):
+            cur_out = channels[i]
+            modules.append(
+                nn.Conv2d(
+                    in_channels=cur_in,
+                    out_channels=cur_out,
+                    kernel_size=3,
+                    padding=1,
+                    stride=2,
+                    bias=False
+
+                )
+            )
+            cur_in = cur_out
+
+            modules.append(
+                nn.BatchNorm2d(cur_out)
+            )
+            modules.append(
+                nn.ReLU()
+            )
+
+
+        modules.append(
+            nn.Conv2d(in_channels=cur_in,
+                      out_channels=out_channels,
+                      kernel_size=3,
+                      padding=1,
+                      stride=2,
+                      bias=False
+                      )
+        )
+
+        modules.append(
+            nn.BatchNorm2d(out_channels)
+        )
+        modules.append(nn.ReLU())
+
+
+
         # ========================
         self.cnn = nn.Sequential(*modules)
 
@@ -42,7 +84,41 @@ class DecoderCNN(nn.Module):
         #  output should be a batch of images, with same dimensions as the
         #  inputs to the Encoder were.
         # ====== YOUR CODE: ======
-        pass
+
+        channels = [512, 256, 128]
+
+        cur_in = in_channels
+
+        for cur_out in channels:
+            modules.append(
+                nn.ConvTranspose2d(
+                    in_channels=cur_in,
+                    out_channels=cur_out,
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                    output_padding=1,
+                    bias=False
+                )
+            )
+
+            modules.append(nn.BatchNorm2d(cur_out))
+            modules.append(nn.ReLU())
+
+            cur_in = cur_out
+        modules.append(
+            nn.ConvTranspose2d(
+                in_channels=cur_in,
+                out_channels=out_channels,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=1,
+                bias=True
+            )
+        )
+
+
         # ========================
         self.cnn = nn.Sequential(*modules)
 
