@@ -39,7 +39,8 @@ def part1_generation_params():
     temperature = 0.0001
     # TODO: Tweak the parameters to generate a literary masterpiece.
     # ====== YOUR CODE: ======
-    pass
+    start_seq = "For i am just:\n"
+    temperature = 0.8
     # ========================
     return start_seq, temperature
 
