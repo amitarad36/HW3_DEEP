@@ -300,29 +300,37 @@ class MultilayerGRU(nn.Module):
         self.out_dim = out_dim
         self.h_dim = h_dim
         self.n_layers = n_layers
-        self.layer_params=[]
+        self.layer_params = []
         
         # ====== YOUR CODE: ======
-        self.layer_params = nn.ModuleList() 
-
-        for layer_index in range(n_layers): 
-            input_dim = in_dim if layer_index == 0 else h_dim
-            layer = nn.Module()
-            layer.update_wx = nn.Linear(input_dim, h_dim, bias=False)
-            layer.update_wh = nn.Linear(h_dim, h_dim, bias=False)
-            layer.reset_wx = nn.Linear(input_dim, h_dim, bias=False)
-            layer.reset_wh = nn.Linear(h_dim, h_dim, bias=False)
-            layer.candidate_wx = nn.Linear(input_dim, h_dim, bias=False)
-            layer.candidate_wh = nn.Linear(h_dim, h_dim, bias=False)
-            layer.b_z = nn.Parameter(torch.zeros(h_dim))
-            layer.b_r = nn.Parameter(torch.zeros(h_dim))
-            layer.b_g = nn.Parameter(torch.zeros(h_dim))
-            layer.dropout = nn.Dropout(dropout) if layer_index > 0 and dropout > 0 else nn.Identity()
-            self.layer_params.append(layer)
-
-        self.h2o = nn.Linear(h_dim, out_dim)
-        # ========================
+        self.layer_params = nn.ModuleList()
+        self.layer_biases = nn.ParameterList()
         
+        for layer_index in range(n_layers):
+            input_dim = in_dim if layer_index == 0 else h_dim
+            
+            # Create linear layers for this GRU layer
+            update_wx = nn.Linear(input_dim, h_dim, bias=False)
+            update_wh = nn.Linear(h_dim, h_dim, bias=False)
+            reset_wx = nn.Linear(input_dim, h_dim, bias=False)
+            reset_wh = nn.Linear(h_dim, h_dim, bias=False)
+            candidate_wx = nn.Linear(input_dim, h_dim, bias=False)
+            candidate_wh = nn.Linear(h_dim, h_dim, bias=False)
+            dropout_layer = nn.Dropout(dropout) if layer_index > 0 and dropout > 0 else nn.Identity()
+            
+            # Store as ModuleList to keep them as parameters
+            layer_module = nn.ModuleList([update_wx, update_wh, reset_wx, reset_wh, candidate_wx, candidate_wh, dropout_layer])
+            self.layer_params.append(layer_module)
+            
+            # Store biases separately
+            self.layer_biases.append(nn.Parameter(torch.zeros(h_dim)))
+            self.layer_biases.append(nn.Parameter(torch.zeros(h_dim)))
+            self.layer_biases.append(nn.Parameter(torch.zeros(h_dim)))
+        
+        self.h2o = nn.Linear(h_dim, out_dim)
+        self.layer_params.append(nn.ModuleList([self.h2o]))
+        # ========================
+     
     def forward(self, input: Tensor, hidden_state: Tensor = None):
         """
         :param input: Batch of sequences. Shape should be (B, S, I) where B is
@@ -352,35 +360,36 @@ class MultilayerGRU(nn.Module):
         layer_input = input
         layer_output = None
 
-        # Loop over timesteps and layers of the model
+        # Loop over layers of the model
+
         activation_sigmoid, activation_tanh = nn.Sigmoid(), nn.Tanh()
-        output_seq = torch.zeros((batch_size, seq_len, self.out_dim), device=input.device, dtype=input.dtype)
+        output_seq = torch.zeros_like(input)
 
         for time_step in range(seq_len):
             current_input = layer_input[:, time_step]
 
-            for layer_index in range(self.n_layers):
-                layer = self.layer_params[layer_index]
-                prev_state = layer_states[layer_index]
+            for layer_index, prev_state in enumerate(layer_states):
+                update_wx, update_wh, reset_wx, reset_wh, candidate_wx, candidate_wh, dropout_layer = self.layer_params[layer_index]
 
                 if layer_index > 0:
                     current_input = layer_states[layer_index - 1]
 
-                update_gate = activation_sigmoid(layer.update_wx(current_input) + layer.update_wh(prev_state) + layer.b_z)
-                reset_gate = activation_sigmoid(layer.reset_wx(current_input) + layer.reset_wh(prev_state) + layer.b_r)
-                candidate_state = activation_tanh(layer.candidate_wx(current_input) + layer.candidate_wh(reset_gate * prev_state) + layer.b_g)
+                update_gate = activation_sigmoid(update_wx(current_input) + update_wh(prev_state))
+                reset_gate = activation_sigmoid(reset_wx(current_input) + reset_wh(prev_state))
+                candidate_state = activation_tanh(candidate_wx(current_input) + candidate_wh(reset_gate * prev_state))
 
                 new_state = update_gate * prev_state + (1 - update_gate) * candidate_state
                 layer_states[layer_index] = new_state
 
                 if layer_index > 0:
-                    current_input = layer.dropout(new_state)
+                    current_input = dropout_layer(new_state)
 
-            # project last layer hidden to output dim
-            output_seq[:, time_step] = self.h2o(layer_states[-1])
+            output_seq[:, time_step] = self.layer_params[-1][0](layer_states[-1])
 
         final_hidden_state = torch.stack(layer_states, dim=1)
         hidden_state = final_hidden_state
         layer_output = output_seq
 
         return layer_output, hidden_state
+
+
