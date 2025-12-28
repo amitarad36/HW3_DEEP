@@ -96,12 +96,10 @@ class Trainer(abc.ABC):
             # ====== YOUR CODE: ======
             train_result = self.train_epoch(dl_train, verbose=verbose, **kw)
             test_result = self.test_epoch(dl_test, verbose=verbose, **kw)
-            
             train_loss.append(sum(train_result.losses) / len(train_result.losses))
             train_acc.append(train_result.accuracy)
             test_loss.append(sum(test_result.losses) / len(test_result.losses))
             test_acc.append(test_result.accuracy)
-            
             actual_num_epochs += 1
             
             if best_acc is None or test_result.accuracy > best_acc:
@@ -266,20 +264,18 @@ class RNNTrainer(Trainer):
         # ====== YOUR CODE: ======
         self.optimizer.zero_grad()
 
-        # 1. Forward pass using the maintained hidden state
-        #    Note: self.hidden_state is None for the very first batch of the epoch
+        # Forward pass
         output, new_hidden_state = self.model(x, self.hidden_state)
         
-        # 2. Update the state and DETACH it to truncate BPTT
-        #    This prevents backprop from trying to go back to the start of the epoch
+        # Update the state
         self.hidden_state = new_hidden_state.detach()
 
-        # 3. Calculate loss
+        # Calculate loss
         loss = self.loss_fn(output.view(-1, output.size(-1)), y.view(-1))
         loss.backward()
         self.optimizer.step()
 
-        # 4. Calculate accuracy
+        # Calculate accuracy
         _, predicted = torch.max(output, dim=2)
         num_correct = (predicted == y).sum()
         # ========================
@@ -301,7 +297,7 @@ class RNNTrainer(Trainer):
             #  - Loss calculation
             #  - Calculate number of correct predictions
             # ====== YOUR CODE: ======
-            # Pass the state, but no need to detach inside torch.no_grad()
+            # Pass the state
             output, self.hidden_state = self.model(x, self.hidden_state)
             
             loss = self.loss_fn(output.view(-1, output.size(-1)), y.view(-1))

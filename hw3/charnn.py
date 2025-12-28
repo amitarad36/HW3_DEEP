@@ -94,7 +94,6 @@ def onehot_to_chars(embedded_text: Tensor, idx_to_char: dict) -> str:
     if embedded_text.numel() == 0:
         return ""
 
-    # Argmax over the one-hot dimension to recover indices
     idxs = embedded_text.argmax(dim=1).tolist()
     chars = [idx_to_char[i] for i in idxs]
     result = "".join(chars)
@@ -129,31 +128,23 @@ def chars_to_labelled_samples(text: str, char_to_idx: dict, seq_len: int, device
     total_chars = len(text)
     V = len(char_to_idx)
 
-    # Guard against invalid inputs
+    # Prevent invalid inputs
     if seq_len <= 0 or total_chars < 2:
         samples = torch.empty((0, seq_len, V), dtype=torch.int8, device=device)
         labels = torch.empty((0, seq_len), dtype=torch.long, device=device)
         return samples, labels
 
-    # Number of full samples that can be labelled (each position needs a next char)
     N = (total_chars - 1) // seq_len 
     if N <= 0:
         samples = torch.empty((0, seq_len, V), dtype=torch.int8, device=device)
         labels = torch.empty((0, seq_len), dtype=torch.long, device=device)
         return samples, labels
 
-    # We need the first N*seq_len + 1 characters (last char supplies the final label)
     use_chars = N * seq_len + 1
-    # Map chars to indices (will raise KeyError if char missing)
     idx_list = [char_to_idx[ch] for ch in text[:use_chars]]
     indices = torch.tensor(idx_list, dtype=torch.long, device=device)
-
-    # samples indices are all but last, reshaped to (N, seq_len)
     samples_idx = indices[:-1].view(N, seq_len)
-    # labels are indices shifted by 1, reshaped to (N, seq_len)
     labels = indices[1:].view(N, seq_len)
-
-    # Convert sample indices to one-hot (N, seq_len, V) and cast to int8
     samples = torch.nn.functional.one_hot(samples_idx, num_classes=V).to(dtype=torch.int8, device=device)
 
     # ========================
@@ -210,28 +201,17 @@ def generate_from_model(model, start_sequence, n_chars, char_maps, T):
     # ====== YOUR CODE: ======
     param_dtype = next(model.parameters()).dtype
     with torch.no_grad():
-        # Step 1: Feed the start_sequence into the model
-        input_seq = chars_to_onehot(start_sequence, char_to_idx).unsqueeze(0).to(device)  # Shape (1, S, V)
-        # one-hot is int8; convert to model parameter dtype (usually float)
+        input_seq = chars_to_onehot(start_sequence, char_to_idx).unsqueeze(0).to(device)  
         input_seq = input_seq.to(dtype=param_dtype)
         output, hidden_state = model(input_seq)
-
-        # Generate characters until reaching n_chars
         current_char = start_sequence[-1]
         for _ in range(len(start_sequence), n_chars):
-            # Get the output for the last character
-            last_output = output[0, -1]  # Shape (V,)
-
-            # Step 2: Convert output to probabilities with temperature
+            last_output = output[0, -1]  
             probs = hot_softmax(last_output, dim=0, temperature=T)
-
-            # Sample a new char index from the distribution
             sampled_idx = torch.multinomial(probs, num_samples=1).item()
             sampled_char = idx_to_char[sampled_idx]
             out_text += sampled_char
-
-            # Step 3: Feed the new char into the model
-            new_input = chars_to_onehot(sampled_char, char_to_idx).unsqueeze(0).to(device)  # Shape (1, 1, V)
+            new_input = chars_to_onehot(sampled_char, char_to_idx).unsqueeze(0).to(device)  
             new_input = new_input.to(dtype=param_dtype)
             output, hidden_state = model(new_input, hidden_state)
     # ========================
@@ -308,8 +288,6 @@ class MultilayerGRU(nn.Module):
         
         for layer_index in range(n_layers):
             input_dim = in_dim if layer_index == 0 else h_dim
-            
-            # Create linear layers for this GRU layer
             update_wx = nn.Linear(input_dim, h_dim, bias=False)
             update_wh = nn.Linear(h_dim, h_dim, bias=False)
             reset_wx = nn.Linear(input_dim, h_dim, bias=False)
@@ -317,12 +295,8 @@ class MultilayerGRU(nn.Module):
             candidate_wx = nn.Linear(input_dim, h_dim, bias=False)
             candidate_wh = nn.Linear(h_dim, h_dim, bias=False)
             dropout_layer = nn.Dropout(dropout) if layer_index > 0 and dropout > 0 else nn.Identity()
-            
-            # Store as ModuleList to keep them as parameters
             layer_module = nn.ModuleList([update_wx, update_wh, reset_wx, reset_wh, candidate_wx, candidate_wh, dropout_layer])
             self.layer_params.append(layer_module)
-            
-            # Store biases separately
             self.layer_biases.append(nn.Parameter(torch.zeros(h_dim)))
             self.layer_biases.append(nn.Parameter(torch.zeros(h_dim)))
             self.layer_biases.append(nn.Parameter(torch.zeros(h_dim)))
