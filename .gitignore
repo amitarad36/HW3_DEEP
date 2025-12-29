@@ -21,7 +21,6 @@ Thumbs.db
 .ipynb_checkpoints/
 
 # ML/Training artifacts
-checkpoints/
 *.pt
 *.pth
 *.ckpt
