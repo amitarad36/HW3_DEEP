@@ -314,7 +314,19 @@ class VAETrainer(Trainer):
         x = x.to(self.device)  # Image batch (N,C,H,W)
         # TODO: Train a VAE on one batch.
         # ====== YOUR CODE: ======
-        pass
+        import hw3.answers
+        hp = hw3.answers.part2_vae_hyperparams()
+        x_sigma2 = hp.get('x_sigma2', 2.0)
+
+        self.optimizer.zero_grad()
+        xr, z_mu, z_log_sigma2 = self.model(x)
+
+        loss, data_loss, kldiv_loss = vae_loss(
+            x, xr, z_mu, z_log_sigma2, x_sigma2
+        )
+
+        loss.backward()
+        self.optimizer.step()
         # ========================
 
         return BatchResult(loss.item(), 1 / data_loss.item())
@@ -326,7 +338,12 @@ class VAETrainer(Trainer):
         with torch.no_grad():
             # TODO: Evaluate a VAE on one batch.
             # ====== YOUR CODE: ======
-            pass
+
+            xr, z_mu, z_log_sigma2 = self.model(x)
+            loss, data_loss, kldiv_loss = vae_loss(
+                x, xr, z_mu, z_log_sigma2, x_sigma2=1.0
+            )
+
             # ========================
 
         return BatchResult(loss.item(), 1 / data_loss.item())
@@ -374,10 +391,7 @@ class TransformerEncoderTrainer(Trainer):
             pass
             # ========================
 
-
-
         return BatchResult(loss.item(), num_correct.item())
-
 
 
 class FineTuningTrainer(Trainer):

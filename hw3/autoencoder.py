@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from math import prod
 
+
 class EncoderCNN(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -32,7 +33,6 @@ class EncoderCNN(nn.Module):
                     padding=1,
                     stride=2,
                     bias=False
-
                 )
             )
             cur_in = cur_out
@@ -43,7 +43,6 @@ class EncoderCNN(nn.Module):
             modules.append(
                 nn.ReLU()
             )
-
 
         modules.append(
             nn.Conv2d(in_channels=cur_in,
@@ -59,8 +58,6 @@ class EncoderCNN(nn.Module):
             nn.BatchNorm2d(out_channels)
         )
         modules.append(nn.ReLU())
-
-
 
         # ========================
         self.cnn = nn.Sequential(*modules)
@@ -118,7 +115,6 @@ class DecoderCNN(nn.Module):
             )
         )
 
-
         # ========================
         self.cnn = nn.Sequential(*modules)
 
@@ -144,7 +140,12 @@ class VAE(nn.Module):
 
         # TODO: Add more layers as needed for encode() and decode().
         # ====== YOUR CODE: ======
-        pass
+
+        self.fc_mu = nn.Linear(n_features, z_dim)
+        self.fc_logvar = nn.Linear(n_features, z_dim)
+
+        self.fc_z_to_h = nn.Linear(z_dim, n_features)
+
         # ========================
 
     def _check_features(self, in_size):
@@ -165,7 +166,16 @@ class VAE(nn.Module):
         #     log_sigma2 (mean and log variance) of q(Z|x).
         #  2. Apply the reparametrization trick to obtain z.
         # ====== YOUR CODE: ======
-        pass
+        h = self.features_encoder(x)
+
+        h = h.view(h.size(0), -1)
+
+        mu = self.fc_mu(h)
+        log_sigma2 = self.fc_logvar(h)
+        eps = torch.randn_like(mu)
+        std = torch.exp(0.5 * log_sigma2)
+
+        z = mu + eps * std  # reparam trick
         # ========================
         return z, mu, log_sigma2
 
@@ -175,7 +185,12 @@ class VAE(nn.Module):
         #  1. Convert latent z to features h with a linear layer.
         #  2. Apply features decoder.
         # ====== YOUR CODE: ======
-        pass
+
+        h = self.fc_z_to_h(z)
+        h = h.view(z.size(0), *self.features_shape)  # (N, C, H, W)
+
+        x_rec = self.features_decoder(h)
+
         # ========================
         # Scale to [-1, 1] (same dynamic range as original images).
         return torch.tanh(x_rec)
@@ -193,7 +208,13 @@ class VAE(nn.Module):
             #    Instead of sampling from N(psi(z), sigma2 I), we'll just take
             #    the mean, i.e. psi(z).
             # ====== YOUR CODE: ======
-            pass
+
+            z = torch.randn(n, self.z_dim, device=device)
+
+            xr = self.decode(z)
+
+            samples = [xr[i] for i in range(n)]
+
             # ========================
         # Detach and move to CPU for display purposes.
         samples = [s.detach().cpu() for s in samples]
@@ -225,7 +246,20 @@ def vae_loss(x, xr, z_mu, z_log_sigma2, x_sigma2):
     #  1. The covariance matrix of the posterior is diagonal.
     #  2. You need to average over the batch dimension.
     # ====== YOUR CODE: ======
-    pass
+
+    diff2 = (x - xr) ** 2
+    rec_per_sample = diff2.view(diff2.size(0), -1).mean(dim=1) / x_sigma2
+    data_loss = rec_per_sample.mean()
+
+    # KL: sum over z dims, then average over batch (NO 0.5)
+    sigma2 = torch.exp(z_log_sigma2)
+
+    kl_per_sample = (sigma2 + z_mu**2 - 1.0 - z_log_sigma2).sum(dim=1)
+
+    kldiv_loss = kl_per_sample.mean()
+
+    loss = data_loss + kldiv_loss
+
     # ========================
 
     return loss, data_loss, kldiv_loss

@@ -78,29 +78,69 @@ PART2_CUSTOM_DATA_URL = None
 
 def part2_vae_hyperparams():
     hypers = dict(
-        batch_size=0, h_dim=0, z_dim=0, x_sigma2=0, learn_rate=0.0, betas=(0.0, 0.0),
-    )
+        batch_size=32, h_dim=1024, z_dim=128, x_sigma2=0.0009, learn_rate=0.0002, betas=(0.9, 0.999),
+    ) # x_sigma2=0.0009
     # TODO: Tweak the hyperparameters to generate a former president.
     # ====== YOUR CODE: ======
-    pass
+    # (i tweaked them in the dict itself)
     # ========================
     return hypers
 
 
 part2_q1 = r"""
 **Your answer:**
+
+ $\sigma^2$ represents the variance of the gaussian likelihood.
+ In the loss, it says how much weight is put  into the reconstruction term (MSE) against the KL regularization.
+
+If we put small value in $\sigma^2$, the MSE is more important, so the model focuses on
+getting the output closer the input, at the cost of getting a smooth latent
+distribution close to the prior.
+
+If we put large value in $\sigma^2$, MSE is weighted less, making the KL divergence more important. 
+This forces the posterior closer to the $N(0,I)$ prior and leads the decoder to ignore
+input details, getting almost the same picture everytime.
+ 
 """
 
 part2_q2 = r"""
 **Your answer:**
+
+1.
+As explained in previous answer, the reconstruction loss (MSE)
+ punishes the model for reconstructing an image that doesn't look like the original image. 
+
+The KL divergence loss punishes the model the further the approximate posterior is from a $N(0,I)$ distribution.
+It acts as a regularization term in our case.
+
+2. The KL loss forces the latent-space distribution to be close to a standard normal distribution,
+making latent means move toward zero and variances toward one.
+
+3. The benefit of this effect is that the latent space becomes more smooth and well-structured, which makes
+sampling and interpolation meaningful: nearby points in the latent space give similar outputs, and sampling
+from $N(0,I)$ gives realistic images.
 """
 
 part2_q3 = r"""
 **Your answer:**
+
+We maximize $p(X)$ because learning a generative model means maximizing the
+ likelihood of the observed data, and the VAE loss is a tractable lower bound on this objective (via Jensen’s inequality).
+
+
 """
 
 part2_q4 = r"""
 **Your answer:**
+
+We model the log-variance because variance has to be positive
+, while neural networks can output any real value. Predicting $\log\sigma^2$ and
+exponentiating it guarantees a positive number without requiring additional constraints.
+
+In addition, using log gives more numerical stability in optimization, especially
+for very small/large values. It also makes the computation of the KL
+divergence simpler, which depends on $\log\sigma^2$.
+
 """
 
 
