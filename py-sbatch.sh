@@ -59,13 +59,14 @@ sbatch \
     --mail-user "$MAIL_USER" \
     --mail-type $MAIL_TYPE \
     -o 'slurm-%N-%j.out' \
-    --wrap "\
+<<EOF
 #!/bin/bash
-echo '*** SLURM BATCH JOB '$JOB_NAME' STARTING ***'
+echo "*** SLURM BATCH JOB '$JOB_NAME' STARTING ***"
 source $CONDA_HOME/etc/profile.d/conda.sh
 conda activate $CONDA_ENV
 cd $WORKDIR
-echo '*** Running: ' ${CMD[@]} '***'
+echo "*** Running: ${CMD[@]} ***"
 ${CMD[@]}
-echo '*** SLURM BATCH JOB '$JOB_NAME' DONE ***'"
+echo "*** SLURM BATCH JOB '$JOB_NAME' DONE ***"
+EOF
 
