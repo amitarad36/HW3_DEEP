@@ -388,7 +388,10 @@ class TransformerEncoderTrainer(Trainer):
             # TODO:
             #  fill out the testing loop.
             # ====== YOUR CODE: ======
-            pass
+            pred = self.model(input_ids, attention_mask).to(self.device)
+            loss = self.loss_fn(pred.squeeze(-1), label)
+            y_t = torch.round(torch.sigmoid(pred)).float()
+            num_correct = (y_t.squeeze(-1) == label).sum()
             # ========================
 
         return BatchResult(loss.item(), num_correct.item())
@@ -403,7 +406,13 @@ class FineTuningTrainer(Trainer):
         # TODO:
         #  fill out the training loop.
         # ====== YOUR CODE: ======
-        pass
+        self.optimizer.zero_grad()
+        pred = self.model(input_ids, attention_masks).to(self.device)
+        loss = self.loss_fn(pred.squeeze(-1), labels)
+        loss.backward()
+        self.optimizer.step()
+        y_t = torch.round(torch.sigmoid(pred)).float()
+        num_correct = (y_t.squeeze(-1) == labels).sum()
         # ========================
         return BatchResult(loss.item(), num_correct)
 

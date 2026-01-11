@@ -146,7 +146,7 @@ divergence simpler, which depends on $\log\sigma^2$.
 
 def part3_transformer_encoder_hyperparams():
     hypers = dict(
-        embed_dim = 0, 
+        embed_dim = 0,
         num_heads = 0,
         num_layers = 0,
         hidden_dim = 0,
@@ -157,7 +157,13 @@ def part3_transformer_encoder_hyperparams():
 
     # TODO: Tweak the hyperparameters to train the transformer encoder.
     # ====== YOUR CODE: ======
-    pass
+    hypers["embed_dim"] = 64
+    hypers["num_heads"] = 4
+    hypers["num_layers"] = 2
+    hypers["hidden_dim"] = 256
+    hypers["window_size"] = 8
+    hypers["droupout"] = 0.1
+    hypers["lr"] = 0.001
     # ========================
     return hypers
 
