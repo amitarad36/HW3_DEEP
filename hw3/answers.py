@@ -157,13 +157,13 @@ def part3_transformer_encoder_hyperparams():
 
     # TODO: Tweak the hyperparameters to train the transformer encoder.
     # ====== YOUR CODE: ======
-    hypers["embed_dim"] = 64
-    hypers["num_heads"] = 4
-    hypers["num_layers"] = 2
-    hypers["hidden_dim"] = 256
-    hypers["window_size"] = 8
+    hypers["embed_dim"] = 256
+    hypers["num_heads"] = 8
+    hypers["num_layers"] = 6
+    hypers["hidden_dim"] = 1024
+    hypers["window_size"] = 128
     hypers["droupout"] = 0.1
-    hypers["lr"] = 0.001
+    hypers["lr"] = 1e-4
     # ========================
     return hypers
 
