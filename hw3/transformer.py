@@ -28,22 +28,14 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
     # ====== YOUR CODE: ======
     device = q.device
     half_window = window_size // 2
-    
-    # Create indices for the sliding window
     offsets = torch.arange(-half_window, half_window + 1, device=device)
     row_indices = torch.arange(seq_len, device=device).unsqueeze(1)
     col_indices = row_indices + offsets
     valid_mask = (col_indices >= 0) & (col_indices < seq_len)
     col_indices = col_indices.clamp(0, seq_len - 1)
-    
-    # Select k and v for each window position using index_select
     k_selected = k.index_select(-2, col_indices.flatten()).view(*k.shape[:-2], seq_len, len(offsets), -1)
-    
-    # Compute attention scores: [*, seq_len, window_size]
     scores = (q.unsqueeze(-2) * k_selected).sum(dim=-1) / math.sqrt(embed_dim)
     scores = scores.masked_fill(~valid_mask, float('-inf'))
-    
-    # Apply padding mask if provided
     if padding_mask is not None:
         mask_gathered = padding_mask.gather(1, col_indices.view(1, -1).expand(batch_size, -1))
         mask_gathered = mask_gathered.view(batch_size, seq_len, len(offsets))
@@ -51,18 +43,15 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
             mask_gathered = mask_gathered.unsqueeze(1)
         scores = scores.masked_fill(mask_gathered == 0, float('-inf'))
     
-    # Apply softmax
     attention_weights = torch.softmax(scores, dim=-1)
     if torch.isnan(attention_weights).any():
         attention_weights = attention_weights.clone()
         attention_weights[torch.isnan(attention_weights)] = 0.0
     
-    # Weight values by attention and sum over window dimension
     v_selected = v.index_select(-2, col_indices.flatten()).view(*v.shape[:-2], seq_len, len(offsets), -1)
     weighted_v = attention_weights.unsqueeze(-1) * v_selected
     values = weighted_v.sum(dim=-2)
     
-    # Apply padding mask to values
     if padding_mask is not None:
         mask_expanded = padding_mask
         while mask_expanded.dim() < values.dim() - 1:
@@ -70,7 +59,6 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
         mask_expanded = mask_expanded.unsqueeze(-1)
         values = values.masked_fill(mask_expanded == 0, 0.0)
     
-    # Reconstruct full attention matrix for return value
     if attention_weights.dim() == 4:
         full_attention = torch.zeros(batch_size, q.shape[1], seq_len, seq_len, device=device)
         expanded_cols = col_indices.view(1, 1, seq_len, -1).expand(*attention_weights.shape)
@@ -199,7 +187,6 @@ class EncoderLayer(nn.Module):
         '''
 
         # ====== YOUR CODE: ======
-        # Block 1: Attention
         res_connection = x
         attn_output = self.self_attn(x, padding_mask)
         x = self.dropout(attn_output)
@@ -251,7 +238,7 @@ class Encoder(nn.Module):
         # ====== YOUR CODE: ======
         x = self.encoder_embedding(sentence)
         x = self.positional_encoding(x)
-        x = self.dropout(x) # Reference code usually applies dropout here
+        x = self.dropout(x)
         for layer in self.encoder_layers:
             x = layer(x, padding_mask)
         cls_token = x[:, 0, :] 

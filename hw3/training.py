@@ -101,7 +101,6 @@ class Trainer(abc.ABC):
             test_loss.append(sum(test_result.losses) / len(test_result.losses))
             test_acc.append(test_result.accuracy)
             actual_num_epochs += 1
-            
             if best_acc is None or test_result.accuracy > best_acc:
                 best_acc = test_result.accuracy
                 epochs_without_improvement = 0
@@ -263,19 +262,11 @@ class RNNTrainer(Trainer):
         #  - Calculate number of correct char predictions
         # ====== YOUR CODE: ======
         self.optimizer.zero_grad()
-
-        # Forward pass
         output, new_hidden_state = self.model(x, self.hidden_state)
-        
-        # Update the state
         self.hidden_state = new_hidden_state.detach()
-
-        # Calculate loss
         loss = self.loss_fn(output.view(-1, output.size(-1)), y.view(-1))
         loss.backward()
         self.optimizer.step()
-
-        # Calculate accuracy
         _, predicted = torch.max(output, dim=2)
         num_correct = (predicted == y).sum()
         # ========================
@@ -297,9 +288,7 @@ class RNNTrainer(Trainer):
             #  - Loss calculation
             #  - Calculate number of correct predictions
             # ====== YOUR CODE: ======
-            # Pass the state
             output, self.hidden_state = self.model(x, self.hidden_state)
-            
             loss = self.loss_fn(output.view(-1, output.size(-1)), y.view(-1))
             _, predicted = torch.max(output, dim=2)
             num_correct = (predicted == y).sum()
@@ -338,12 +327,10 @@ class VAETrainer(Trainer):
         with torch.no_grad():
             # TODO: Evaluate a VAE on one batch.
             # ====== YOUR CODE: ======
-
             xr, z_mu, z_log_sigma2 = self.model(x)
             loss, data_loss, kldiv_loss = vae_loss(
                 x, xr, z_mu, z_log_sigma2, x_sigma2=1.0
             )
-
             # ========================
 
         return BatchResult(loss.item(), 1 / data_loss.item())

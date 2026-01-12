@@ -69,7 +69,6 @@ def chars_to_onehot(text: str, char_to_idx: dict) -> Tensor:
     if N == 0:
         return result
 
-    # Fill one-hot rows according to mapping
     for i, ch in enumerate(text):
         idx = char_to_idx.get(ch)
         if idx is None:
@@ -128,7 +127,6 @@ def chars_to_labelled_samples(text: str, char_to_idx: dict, seq_len: int, device
     total_chars = len(text)
     V = len(char_to_idx)
 
-    # Prevent invalid inputs
     if seq_len <= 0 or total_chars < 2:
         samples = torch.empty((0, seq_len, V), dtype=torch.int8, device=device)
         labels = torch.empty((0, seq_len), dtype=torch.long, device=device)
