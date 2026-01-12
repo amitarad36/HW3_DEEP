@@ -27,48 +27,92 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
 
     # ====== YOUR CODE: ======
     device = q.device
-    half_window = window_size // 2
-    offsets = torch.arange(-half_window, half_window + 1, device=device)
-    row_indices = torch.arange(seq_len, device=device).unsqueeze(1)
-    col_indices = row_indices + offsets
-    valid_mask = (col_indices >= 0) & (col_indices < seq_len)
-    col_indices = col_indices.clamp(0, seq_len - 1)
-    k_selected = k.index_select(-2, col_indices.flatten()).view(*k.shape[:-2], seq_len, len(offsets), -1)
-    scores = (q.unsqueeze(-2) * k_selected).sum(dim=-1) / math.sqrt(embed_dim)
-    scores = scores.masked_fill(~valid_mask, float('-inf'))
+    
+    # 1. Setup window indices
+    # We create a relative range [-w/2, ..., +w/2]
+    w_radius = window_size // 2
+    window_shifts = torch.arange(-w_radius, w_radius + 1, device=device)
+    
+    # Broadcast to create a grid of indices: [SeqLen, WindowSize]
+    # Each row 'i' contains indices [i-w/2, ..., i+w/2]
+    seq_indices = torch.arange(seq_len, device=device).unsqueeze(1)
+    window_indices = seq_indices + window_shifts
+    
+    # 2. Mask out-of-bounds indices (left of 0 or right of seq_len)
+    mask_valid_indices = (window_indices >= 0) & (window_indices < seq_len)
+    
+    # Clamp indices so 'index_select' doesn't crash (we will mask invalid ones later)
+    window_indices = window_indices.clamp(min=0, max=seq_len - 1)
+    
+    # 3. Gather Keys (K)
+    # We flatten the window indices to use index_select efficiently
+    flat_indices = window_indices.flatten()
+    k_subset = k.index_select(-2, flat_indices)
+    # Reshape back to [Batch, ..., SeqLen, WindowSize, Dim]
+    k_subset = k_subset.view(*k.shape[:-2], seq_len, len(window_shifts), -1)
+    
+    # 4. Compute Scores (Scaled Dot Product)
+    # Q: [..., L, 1, D] * K_subset: [..., L, W, D] -> Sum last dim -> [..., L, W]
+    attn_scores = (q.unsqueeze(-2) * k_subset).sum(dim=-1) / math.sqrt(embed_dim)
+    
+    # Apply valid-index mask (handle edges of the sliding window)
+    attn_scores = attn_scores.masked_fill(~mask_valid_indices, float('-inf'))
+
+    # 5. Apply Padding Mask
     if padding_mask is not None:
-        mask_gathered = padding_mask.gather(1, col_indices.view(1, -1).expand(batch_size, -1))
-        mask_gathered = mask_gathered.view(batch_size, seq_len, len(offsets))
-        while mask_gathered.dim() < scores.dim():
-            mask_gathered = mask_gathered.unsqueeze(1)
-        scores = scores.masked_fill(mask_gathered == 0, float('-inf'))
+        # Expand valid indices to batch dimension to gather mask values
+        gather_indices = window_indices.view(1, -1).expand(batch_size, -1)
+        mask_subset = padding_mask.gather(1, gather_indices)
+        mask_subset = mask_subset.view(batch_size, seq_len, len(window_shifts))
+        
+        # Broadcast to head dimension if necessary (for Multi-Head Attention)
+        while mask_subset.dim() < attn_scores.dim():
+            mask_subset = mask_subset.unsqueeze(1)
+            
+        attn_scores = attn_scores.masked_fill(mask_subset == 0, float('-inf'))
     
-    attention_weights = torch.softmax(scores, dim=-1)
-    if torch.isnan(attention_weights).any():
-        attention_weights = attention_weights.clone()
-        attention_weights[torch.isnan(attention_weights)] = 0.0
+    # 6. Softmax
+    attn_probs = torch.softmax(attn_scores, dim=-1)
     
-    v_selected = v.index_select(-2, col_indices.flatten()).view(*v.shape[:-2], seq_len, len(offsets), -1)
-    weighted_v = attention_weights.unsqueeze(-1) * v_selected
-    values = weighted_v.sum(dim=-2)
+    # Handle NaNs (e.g. rows that are entirely masked out)
+    if torch.isnan(attn_probs).any():
+        attn_probs = attn_probs.clone()
+        attn_probs[torch.isnan(attn_probs)] = 0.0
     
+    # 7. Compute Values (V)
+    v_subset = v.index_select(-2, flat_indices)
+    v_subset = v_subset.view(*v.shape[:-2], seq_len, len(window_shifts), -1)
+    
+    # Weighted Sum: Probs * Values
+    weighted_values = attn_probs.unsqueeze(-1) * v_subset
+    values = weighted_values.sum(dim=-2)
+
+    # Force outputs for padding tokens to be exactly 0.0
     if padding_mask is not None:
-        mask_expanded = padding_mask
-        while mask_expanded.dim() < values.dim() - 1:
-            mask_expanded = mask_expanded.unsqueeze(1)
-        mask_expanded = mask_expanded.unsqueeze(-1)
-        values = values.masked_fill(mask_expanded == 0, 0.0)
-    
-    if attention_weights.dim() == 4:
-        full_attention = torch.zeros(batch_size, q.shape[1], seq_len, seq_len, device=device)
-        expanded_cols = col_indices.view(1, 1, seq_len, -1).expand(*attention_weights.shape)
+        out_mask = padding_mask
+        # Broadcast mask to match value shape [Batch, (Heads), SeqLen, Dim]
+        while out_mask.dim() < values.dim() - 1:
+            out_mask = out_mask.unsqueeze(1)
+        out_mask = out_mask.unsqueeze(-1)
+        
+        values = values.masked_fill(out_mask == 0, 0.0)
+
+    # 8. Reconstruct Full Dense Attention Matrix (for return value)
+    if attn_probs.dim() == 4:
+        # Multi-head case: [Batch, Heads, SeqLen, SeqLen]
+        dense_shape = (batch_size, q.shape[1], seq_len, seq_len)
+        scatter_indices = window_indices.view(1, 1, seq_len, -1).expand(*attn_probs.shape)
     else:
-        full_attention = torch.zeros(batch_size, seq_len, seq_len, device=device)
-        expanded_cols = col_indices.view(1, seq_len, -1).expand(*attention_weights.shape)
+        # Single-head case: [Batch, SeqLen, SeqLen]
+        dense_shape = (batch_size, seq_len, seq_len)
+        scatter_indices = window_indices.view(1, seq_len, -1).expand(*attn_probs.shape)
+        
+    full_attention = torch.zeros(dense_shape, device=device)
+    # Scatter the sparse window probs back into the dense matrix
+    full_attention.scatter_add_(dim=-1, index=scatter_indices, src=attn_probs)
     
-    full_attention.scatter_add_(-1, expanded_cols, attention_weights)
     attention = full_attention
-    # ======================
+    # ========================
 
     return values, attention
 

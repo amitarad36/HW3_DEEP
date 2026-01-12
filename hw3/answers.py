@@ -47,7 +47,7 @@ def part1_generation_params():
 
 part1_q1 = r"""
 **Your answer:**
-We split the data into fixed-length sequences (windows) for several reasons. Firstly this allows pairing each sequence with labels (the same sequence shifted by one character for next-character prediction).
+Sliding-window attention is like a CNN: each token only looks at a local window, so cost drops from $O(n^2)$ to about $O(n \cdot w)$ and we keep the most relevant nearby context. Long-range info still gets through by stacking layers—each layer lets information hop one window farther—so depth expands reach even though any single layer is local. The trade-off is if the window is tiny or depth is shallow, faraway dependencies can be missed.
 Moreover this keeps tensors fit in memory, enables parallelism (batching, passing forward a batch and not just one sequence at a time), and applies truncated BPTT so gradients remain stable. And lastly, using this method we also increase the number of training examples (we use overlapping windows).
 """
 
@@ -170,10 +170,32 @@ def part3_transformer_encoder_hyperparams():
 
 part3_q1 = r"""
 **Your answer:**
+
+Sliding-window attention reduces the computational complexity from quadratic $O(n^2)$ to linear $O(n \cdot w)$ by restricting each token to a local window of size $w$. While this makes processing long sequences feasible, a single layer is limited to seeing only its immediate neighbors.
+
+Stacking encoder layers compensates for this limitation by expanding the **Effective Receptive Field**. In the first layer, a token aggregates information only from its local window. In the second layer, that same token attends to neighbors who have already gathered information from *their* own windows in the previous layer. This allows information to propagate outward, "hopping" further with each additional layer.
+
+Much like stacking convolutional layers increases the receptive field size linearly with depth, stacking sliding-window attention layers allows the final layer to incorporate global context from the entire sequence. This enables the model to capture long-range dependencies despite using only computationally efficient, local operations.
 """
 
 part3_q2 = r"""
 **Your answer:**
+
+**Proposed Variation: Block-Dilated Attention**
+
+We propose a pattern that mixes local focus with distant "hops," constructed by concatenating blocks of valid tokens with blocks of skipped tokens.
+
+**The Pattern:** We define a **locality size** ($l$) and a **dilation gap** ($d$). We repeat this pattern $n$ times.
+
+- **Visual:** +++ -- +++ -- +++ (where +++ is length $l$, and -- is length $d$, we mark it here with d=2, l=3 for example).
+- **Total Span:** The attention reaches back much further than a standard window.
+
+**Complexity Analysis:** The time complexity stays $O(N \cdot w)$, where $w$ is the total number of active tokens ($w = n \cdot l$). Even though the window stretches further back due to the gaps ($d$), the model still computes the same fixed number of dot products per token. The computation cost depends only on the number of + s, not the - s.
+
+**Global Context & Layers:** This method shares global information much faster than the standard sliding window. By adding the gaps ($d$), a single layer can "see" distinct parts of the sequence that are far apart.
+
+- **Layers:** We would need fewer layers to cover the whole sequence because each layer's reach is multiplied by the spacing.
+- **Limitations:** The main trade-off is "blind spots." If a critical word falls exactly in a --- gap, the current token can't see it directly. It has to wait for a deeper layer where that missing word has been aggregated by a neighbor. A potential fix can be to vary the parameters ($l$, $d$) across layers to ensure coverage, say we start with large d and small l and gradually decrease d while increasing l in deeper layers.
 """
 
 # ==============
