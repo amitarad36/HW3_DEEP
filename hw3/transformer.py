@@ -88,8 +88,8 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
     full_attention.scatter_add_(dim=-1, index=scatter_indices, src=attn_probs)
     
     attention = full_attention
-    # ========================
-
+    # ======================
+    
     return values, attention
 
 class MultiHeadAttention(nn.Module):

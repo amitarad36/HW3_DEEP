@@ -78,11 +78,16 @@ PART2_CUSTOM_DATA_URL = None
 
 def part2_vae_hyperparams():
     hypers = dict(
-        batch_size=32, h_dim=1024, z_dim=128, x_sigma2=0.0009, learn_rate=0.0002, betas=(0.9, 0.999),
-    ) # x_sigma2=0.0009
+        batch_size=0, h_dim=0, z_dim=0, x_sigma2=0, learn_rate=0.0, betas=(0.0, 0.0),
+    )
     # TODO: Tweak the hyperparameters to generate a former president.
     # ====== YOUR CODE: ======
-    # (i tweaked them in the dict itself)
+    hypers["batch_size"] = 32
+    hypers["h_dim"] = 1024
+    hypers["z_dim"] = 128
+    hypers["x_sigma2"] = 0.0009
+    hypers["learn_rate"] = 0.0002
+    hypers["betas"] = (0.9, 0.999)
     # ========================
     return hypers
 
@@ -146,7 +151,7 @@ divergence simpler, which depends on $\log\sigma^2$.
 
 def part3_transformer_encoder_hyperparams():
     hypers = dict(
-        embed_dim = 0,
+        embed_dim = 0, 
         num_heads = 0,
         num_layers = 0,
         hidden_dim = 0,
