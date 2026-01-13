@@ -28,87 +28,63 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
     # ====== YOUR CODE: ======
     device = q.device
     
-    # 1. Setup window indices
-    # We create a relative range [-w/2, ..., +w/2]
     w_radius = window_size // 2
     window_shifts = torch.arange(-w_radius, w_radius + 1, device=device)
     
-    # Broadcast to create a grid of indices: [SeqLen, WindowSize]
-    # Each row 'i' contains indices [i-w/2, ..., i+w/2]
     seq_indices = torch.arange(seq_len, device=device).unsqueeze(1)
     window_indices = seq_indices + window_shifts
     
-    # 2. Mask out-of-bounds indices (left of 0 or right of seq_len)
     mask_valid_indices = (window_indices >= 0) & (window_indices < seq_len)
     
-    # Clamp indices so 'index_select' doesn't crash (we will mask invalid ones later)
     window_indices = window_indices.clamp(min=0, max=seq_len - 1)
     
-    # 3. Gather Keys (K)
-    # We flatten the window indices to use index_select efficiently
     flat_indices = window_indices.flatten()
     k_subset = k.index_select(-2, flat_indices)
-    # Reshape back to [Batch, ..., SeqLen, WindowSize, Dim]
     k_subset = k_subset.view(*k.shape[:-2], seq_len, len(window_shifts), -1)
     
-    # 4. Compute Scores (Scaled Dot Product)
-    # Q: [..., L, 1, D] * K_subset: [..., L, W, D] -> Sum last dim -> [..., L, W]
+
     attn_scores = (q.unsqueeze(-2) * k_subset).sum(dim=-1) / math.sqrt(embed_dim)
     
-    # Apply valid-index mask (handle edges of the sliding window)
     attn_scores = attn_scores.masked_fill(~mask_valid_indices, float('-inf'))
 
-    # 5. Apply Padding Mask
     if padding_mask is not None:
-        # Expand valid indices to batch dimension to gather mask values
         gather_indices = window_indices.view(1, -1).expand(batch_size, -1)
         mask_subset = padding_mask.gather(1, gather_indices)
         mask_subset = mask_subset.view(batch_size, seq_len, len(window_shifts))
         
-        # Broadcast to head dimension if necessary (for Multi-Head Attention)
         while mask_subset.dim() < attn_scores.dim():
             mask_subset = mask_subset.unsqueeze(1)
             
         attn_scores = attn_scores.masked_fill(mask_subset == 0, float('-inf'))
     
-    # 6. Softmax
     attn_probs = torch.softmax(attn_scores, dim=-1)
     
-    # Handle NaNs (e.g. rows that are entirely masked out)
     if torch.isnan(attn_probs).any():
         attn_probs = attn_probs.clone()
         attn_probs[torch.isnan(attn_probs)] = 0.0
     
-    # 7. Compute Values (V)
     v_subset = v.index_select(-2, flat_indices)
     v_subset = v_subset.view(*v.shape[:-2], seq_len, len(window_shifts), -1)
     
-    # Weighted Sum: Probs * Values
     weighted_values = attn_probs.unsqueeze(-1) * v_subset
     values = weighted_values.sum(dim=-2)
 
-    # Force outputs for padding tokens to be exactly 0.0
     if padding_mask is not None:
         out_mask = padding_mask
-        # Broadcast mask to match value shape [Batch, (Heads), SeqLen, Dim]
         while out_mask.dim() < values.dim() - 1:
             out_mask = out_mask.unsqueeze(1)
         out_mask = out_mask.unsqueeze(-1)
         
         values = values.masked_fill(out_mask == 0, 0.0)
 
-    # 8. Reconstruct Full Dense Attention Matrix (for return value)
     if attn_probs.dim() == 4:
-        # Multi-head case: [Batch, Heads, SeqLen, SeqLen]
         dense_shape = (batch_size, q.shape[1], seq_len, seq_len)
         scatter_indices = window_indices.view(1, 1, seq_len, -1).expand(*attn_probs.shape)
     else:
-        # Single-head case: [Batch, SeqLen, SeqLen]
         dense_shape = (batch_size, seq_len, seq_len)
         scatter_indices = window_indices.view(1, seq_len, -1).expand(*attn_probs.shape)
         
     full_attention = torch.zeros(dense_shape, device=device)
-    # Scatter the sparse window probs back into the dense matrix
     full_attention.scatter_add_(dim=-1, index=scatter_indices, src=attn_probs)
     
     attention = full_attention
